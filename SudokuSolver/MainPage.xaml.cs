@@ -67,10 +67,13 @@ public partial class MainPage : ContentPage {
                 Start.Text = "Continue";
                 DisplayState();
             } catch(InvalidStateException e) {
-                AddLogEntry(e.Log);
+                if(e.Log is not null && e.Log.Length != 0) AddLogEntry(e.Log);
                 AddLogEntry("Invalid state: " + e.Reason);
                 DisplayState();
                 State = null;
+                foreach (var cell in e.InvolvedCells) {
+                    Cells[cell.row, cell.col].BackgroundColor = Colors.Red;
+                }
             }
             return;
         }
@@ -98,10 +101,13 @@ public partial class MainPage : ContentPage {
             }
             catch (InvalidStateException e) {
                 MainThread.BeginInvokeOnMainThread(() => {
-                    AddLogEntry(e.Log);
+                    if (e.Log is not null && e.Log.Length != 0)  AddLogEntry(e.Log);
                     AddLogEntry("Invalid state: " + e.Reason);
                     DisplayState();
                     State = null;
+                    foreach (var cell in e.InvolvedCells) {
+                        Cells[cell.row, cell.col].BackgroundColor = Colors.Red;
+                    }
                     Start.Text = "Start";
                     Processing = false;
                     ProcessingThread.Join();
