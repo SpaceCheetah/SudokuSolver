@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:ss="clr-namespace:SudokuSolver"
+             xmlns:converters="clr-namespace:SudokuSolver.Converters"
+             x:Class="SudokuSolver.MainPage"
+             x:Name="this">
+    <ContentPage.Resources>
+        <converters:BoolInverter x:Key="BoolInverter" />
+    </ContentPage.Resources>
+    <Grid RowDefinitions="*,auto" ColumnDefinitions="3*, 1*" x:Name="Container" BindingContext="{x:Reference this}">
+        <Grid.GestureRecognizers>
+            <TapGestureRecognizer Tapped="OnClick" />
+        </Grid.GestureRecognizers>
+        <ss:SquareGrid x:Name="Board" Padding="20">
+        </ss:SquareGrid>
+        <Button x:Name="Start" Text="Start" HorizontalOptions="Center" Grid.Row="1" Margin="0,0,0,20" Clicked="OnStartClicked" Grid.ColumnSpan="2"
+                IsVisible="{Binding Processing, Converter={StaticResource BoolInverter}}"/>
+        <ActivityIndicator IsRunning="True" IsVisible="{Binding Processing}" Grid.Row="1" Margin="0,0,0,20" Grid.ColumnSpan="2"/>
+        <CollectionView Grid.Column="1" ItemsSource="{Binding Log}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Label Text="{Binding Entry}"/>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

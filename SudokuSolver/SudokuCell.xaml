@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="SudokuSolver.SudokuCell"
+             xmlns:converters="clr-namespace:SudokuSolver.Converters"
+             x:Name="this">
+    <ContentView.Resources>
+        <converters:IntToBool x:Key="IntToBool"/>
+        <converters:IntToBool Invert="True" x:Key="IntToBoolInvert" />
+    </ContentView.Resources>
+    <Grid RowDefinitions="*" ColumnDefinitions="*" Margin="5" BindingContext="{x:Reference this}">
+        <Grid x:Name="Grid"
+              RowDefinitions="*,*,*"
+              ColumnDefinitions="*,*,*"
+              IsVisible="{Binding Value, Converter={StaticResource IntToBoolInvert}}">
+            <Label Text="1" IsVisible="{Binding P1}"/>
+            <Label Text="2" Grid.Column="1" IsVisible="{Binding P2}" HorizontalTextAlignment="Center"/>
+            <Label Text="3" Grid.Column="2" IsVisible="{Binding P3}" HorizontalTextAlignment="End"/>
+            <Label Text="4" Grid.Row="1" IsVisible="{Binding P4}" VerticalTextAlignment="Center"/>
+            <Label Text="5" Grid.Row="1" Grid.Column="1" IsVisible="{Binding P5}" VerticalTextAlignment="Center" HorizontalTextAlignment="Center"/>
+            <Label Text="6" Grid.Row="1" Grid.Column="2" IsVisible="{Binding P6}" VerticalTextAlignment="Center" HorizontalTextAlignment="End"/>
+            <Label Text="7" Grid.Row="2" IsVisible="{Binding P7}" VerticalTextAlignment="End"/>
+            <Label Text="8" Grid.Row="2" Grid.Column="1" IsVisible="{Binding P8}" VerticalTextAlignment="End" HorizontalTextAlignment="Center"/>
+            <Label Text="9" Grid.Row="2" Grid.Column="2" IsVisible="{Binding P9}" VerticalTextAlignment="End" HorizontalTextAlignment="End"/>
+        </Grid>
+        <Label x:Name="Label" IsVisible="{Binding Value, Converter={StaticResource IntToBool}}"
+               HorizontalTextAlignment="Center" VerticalTextAlignment="Center" FontSize="Title"
+               FontAttributes="Bold" Text="{Binding Value}"/>
+    </Grid>
+</ContentView>
