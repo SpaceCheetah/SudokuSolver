@@ -37,6 +37,10 @@ public partial class App : Application {
                 MainThread.BeginInvokeOnMainThread(() => Page.NumberPressed(kc == KeyCode.VcBackspace ? 0 : kc - KeyCode.Vc1 + 1));
                 return;
             }
+            if(kc == KeyCode.VcEnter) {
+                MainThread.BeginInvokeOnMainThread(() => Page.OnStartClicked(null, null));
+                return;
+            }
             MP.Arrow arrow;
             switch(kc) {
                 case KeyCode.VcNumPadUp:
