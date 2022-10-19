@@ -8,7 +8,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 
 public partial class MainPage : ContentPage {
-    private SudokuCell Selected;
+    private (SudokuCell cell, (int row, int col) pos) Selected;
     private SudokuCell[,] Cells = new SudokuCell[9,9];
     private SudokuState State;
     private static readonly Color BColor = Application.Current.RequestedTheme == AppTheme.Light ? Colors.White : Colors.Black;
@@ -49,7 +49,7 @@ public partial class MainPage : ContentPage {
 
     public void OnStartClicked(object sender, EventArgs _) {
         if (Processing) return;
-        Selected = null;
+        Selected.cell = null;
         ClearColors();
         SudokuSolver solver;
         if (State is null) {
@@ -118,8 +118,8 @@ public partial class MainPage : ContentPage {
     }
 
     public void NumberPressed(int num) {
-        if(Selected is not null && !Processing) {
-            Selected.Value = num;
+        if(Selected.cell is not null && !Processing) {
+            Selected.cell.Value = num;
             State = null;
             foreach(var cell in Cells) {
                 cell.ResetMarks();
@@ -128,15 +128,61 @@ public partial class MainPage : ContentPage {
         }
     }
 
+    public enum Arrow {
+        Up, Right, Down, Left
+    }
+
+    public void ArrowPressed(Arrow arrow) {
+        if (Selected.cell is null) return;
+        (int row, int col) = Selected.pos;
+        switch(arrow) {
+            case Arrow.Up:
+                row--;
+                break;
+            case Arrow.Right:
+                col++;
+                if(col == 9) {
+                    col = 0;
+                    row++;
+                }
+                break;
+            case Arrow.Down:
+                row++;
+                break;
+            case Arrow.Left:
+                col--;
+                if(col == -1) {
+                    col = 8;
+                    row--;
+                }
+                break;
+        }
+        if (row is < 0 or >= 9) {
+            return;
+        }
+        Selected.pos = (row, col);
+        Selected.cell.BackgroundColor = BColor;
+        Selected.cell = Cells[Selected.pos.row, Selected.pos.col];
+        Selected.cell.BackgroundColor = SColor;
+    }
+
     public void OnClick(object sender, EventArgs args) {
         if (Processing) {
             return;
         }
-        Selected = null;
+        Selected.cell = null;
         ClearColors();
         if (sender is SudokuCell s) {
-            Selected = s;
-            Selected.BackgroundColor = SColor;
+            Selected.cell = s;
+            Selected.cell.BackgroundColor = SColor;
+            for(int r = 0; r < 9; r++) {
+                for(int c = 0; c < 9; c++) {
+                    if(Selected.cell == Cells[r,c]) {
+                        Selected.pos = (r, c);
+                        break;
+                    }
+                }
+            }
         }
     }
 
