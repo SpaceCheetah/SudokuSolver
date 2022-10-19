@@ -42,10 +42,11 @@ public class SudokuSolver {
         HSingle,
         NPair,
         HPair,
+        LockedCandidates,
         NTriple,
         HTriple,
         NQuad,
-        LockedCandidates
+        HQuad
     };
 
     private StepResult SingleCandidate() {
@@ -294,6 +295,63 @@ public class SudokuSolver {
         }
         return null;
     });
+
+    private StepResult HQuad() => DoForEachGroup((type, group) => {
+        //Mostly copied from HTriple; could probably factor much of it out
+        var dict = new Dictionary<int, HashSet<(int row, int col)>>();
+        for (int i = 1; i < 9; i++) {
+            dict[i] = new HashSet<(int, int)>();
+        }
+        for (int i = 0; i < 9; i++) {
+            (int row, int col) = GetPos(type, group, i);
+            SudokuState.Cell cell = State.Cells[row, col];
+            if (cell.Value != 0) {
+                dict.Remove(cell.Value);
+                continue;
+            }
+            foreach (int mark in cell.Marks) {
+                if (!dict.ContainsKey(mark)) continue;
+                if (dict[mark].Count == 4) dict.Remove(mark);
+                else dict[mark].Add((row, col));
+            }
+        }
+        var kvps = dict.ToList();
+        for (int i = 0; i < dict.Count; i++) {
+            for (int j = i + 1; j < dict.Count; j++) {
+                for (int k = j + 1; k < dict.Count; k++) {
+                    for(int l = k + 1; l < dict.Count; l++) {
+                        var set = new HashSet<(int row, int col)>(kvps[i].Value);
+                        set.UnionWith(kvps[j].Value);
+                        set.UnionWith(kvps[k].Value);
+                        set.UnionWith(kvps[l].Value);
+                        if (set.Count != 4) continue;
+                        var marks = new HashSet<int>() { kvps[i].Key, kvps[j].Key, kvps[k].Key, kvps[l].Key };
+                        var changed = new List<(int row, int col)>();
+                        foreach (var pos in set) {
+                            var cell = State.Cells[pos.row, pos.col];
+                            int markCount = cell.Marks.Count;
+                            cell.Marks.IntersectWith(marks);
+                            if (cell.Marks.Count != markCount) {
+                                changed.Add(pos);
+                            }
+                        }
+                        if (changed.Count == 0) continue;
+                        var colors = new Dictionary<(int row, int col), Color>();
+                        foreach (var pos in set) {
+                            colors[pos] = Colors.Blue;
+                        }
+                        foreach (var pos in changed) {
+                            colors[pos] = Colors.Green;
+                        }
+                        return new StepResult($"Hidden quad: Cells {ListCells(set)} formed quad {ListMarks(marks)} in {type.ToString()} {group + 1}, " +
+                            $"affecting cells {ListCells(changed)}", colors);
+                    }
+                }
+            }
+        }
+        return null;
+    });
+
 
     private StepResult LockedCandidates() => DoForEachGroup((type, group) => {
         var dict = new Dictionary<int, HashSet<(int row, int col)>>();
