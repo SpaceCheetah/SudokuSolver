@@ -46,7 +46,9 @@ public class SudokuSolver {
         NTriple,
         HTriple,
         NQuad,
-        HQuad
+        HQuad,
+        XWing,
+        Swordfish
     };
 
     private StepResult SingleCandidate() {
@@ -66,34 +68,13 @@ public class SudokuSolver {
     }
 
     private StepResult HSingle() => DoForEachGroup((type, group) => {
-        var dict = new Dictionary<int, (int row, int col)>();
-        for (int mark = 1; mark < 10; mark++) {
-            dict[mark] = (-1, -1);
-        }
-        for (int i = 0; i < 9; i++) {
-            (int row, int col) = GetPos(type, group, i);
-            var cell = State.Cells[row, col];
-            if (cell.Value == 0) {
-                foreach (int mark in cell.Marks) {
-                    if (!dict.ContainsKey(mark)) continue;
-                    if (dict[mark] == (-1, -1)) {
-                        dict[mark] = (row, col);
-                    }
-                    else {
-                        dict.Remove(mark);
-                    }
-                }
-            }
-            else {
-                dict.Remove(cell.Value);
-            }
-        }
+        var dict = GetMarkDict(type, group, 1);
         if (dict.Count == 0) return null;
         var kvp = dict.First();
-        State.Cells[kvp.Value.row, kvp.Value.col].Value = kvp.Key;
-        return new StepResult($"Hidden Single: Cell R{kvp.Value.row + 1}C{kvp.Value.col + 1} was the only possibility for {kvp.Key} in {type.ToString()} {group + 1}",
+        State.Cells[kvp.Value.First().row, kvp.Value.First().col].Value = kvp.Key;
+        return new StepResult($"Hidden Single: Cell R{kvp.Value.First().row + 1}C{kvp.Value.First().col + 1} was the only possibility for {kvp.Key} in {type.ToString()} {group + 1}",
             new Dictionary<(int row, int col), Color>() {
-                [(kvp.Value.row, kvp.Value.col)] = Colors.Green
+                [(kvp.Value.First().row, kvp.Value.First().col)] = Colors.Green
             });
     });
 
@@ -129,30 +110,14 @@ public class SudokuSolver {
     private StepResult HPair() => DoForEachGroup((type, group) => {
         //Looking for two marks that only occur in the same 2 cells in a group
         //map from mark to the list of containing cells
-        var dict = new Dictionary<int, List<(int row, int col)>>();
-        for (int i = 1; i < 9; i++) {
-            dict[i] = new List<(int, int)>();
-        }
-        for (int i = 0; i < 9; i++) {
-            (int row, int col) = GetPos(type, group, i);
-            SudokuState.Cell cell = State.Cells[row, col];
-            if (cell.Value != 0) {
-                dict.Remove(cell.Value);
-                continue;
-            }
-            foreach (int mark in cell.Marks) {
-                if (!dict.ContainsKey(mark)) continue;
-                if (dict[mark].Count == 2) dict.Remove(mark);
-                else dict[mark].Add((row, col));
-            }
-        }
+        var dict = GetMarkDict(type, group, 2);
         //At this point, should be left with only lists of exactly 2 cells (0 would be invalid, 1 would be taken care of by HSingle). Verify anyway though, since HSingle might not have been run.
         var kvps = dict.ToList();
         for (int i = 0; i < dict.Count; i++) {
             for (int j = i + 1; j < dict.Count; j++) {
                 if (!kvps[i].Value.SequenceEqual(kvps[j].Value) || kvps[i].Value.Count != 2) continue;
-                var pos1 = kvps[i].Value[0];
-                var pos2 = kvps[i].Value[1];
+                var pos1 = kvps[i].Value.First();
+                var pos2 = kvps[i].Value.Skip(1).First();
                 var cell1 = State.Cells[pos1.row, pos1.col];
                 var cell2 = State.Cells[pos2.row, pos2.col];
                 if (cell1.Marks.Count == 2 && cell2.Marks.Count == 2) continue; //nothing to remove
@@ -168,6 +133,30 @@ public class SudokuSolver {
                         [(pos2.row, pos2.col)] = (markCount2 == cell2.Marks.Count) ? Colors.Blue : Colors.Green
                     });
             }
+        }
+        return null;
+    });
+
+    private StepResult LockedCandidates() => DoForEachGroup((type, group) => {
+        foreach (var kvp in GetMarkDict(type, group, 9)) {
+            //check if all the candidates are in the same group (excepting the one it's currently iterating through)
+            var groups = GetGroups(kvp.Value.First().row, kvp.Value.First().col);
+            groups.Remove((type, group));
+            foreach (var pos in kvp.Value.Skip(1)) {
+                groups.IntersectWith(GetGroups(pos.row, pos.col));
+            }
+            if (groups.Count == 0) continue;
+            var removed = RemoveMarks(groups.First().type, groups.First().group, kvp.Key, kvp.Value);
+            if (removed.Count == 0) continue;
+            var colors = new Dictionary<(int row, int col), Color>();
+            foreach (var cell in kvp.Value) {
+                colors[cell] = Colors.Blue;
+            }
+            foreach (var cell in removed) {
+                colors[cell] = Colors.Green;
+            }
+            return new StepResult($"Locked candidates: All candidates for {kvp.Key} in {type.ToString()} {group + 1} are in {groups.First().type.ToString()} {groups.First().group + 1}, " +
+                $"affecting cells {ListCells(removed)}", colors);
         }
         return null;
     });
@@ -209,23 +198,7 @@ public class SudokuSolver {
     });
 
     private StepResult HTriple() => DoForEachGroup((type, group) => {
-        var dict = new Dictionary<int, HashSet<(int row, int col)>>();
-        for (int i = 1; i < 9; i++) {
-            dict[i] = new HashSet<(int, int)>();
-        }
-        for (int i = 0; i < 9; i++) {
-            (int row, int col) = GetPos(type, group, i);
-            SudokuState.Cell cell = State.Cells[row, col];
-            if (cell.Value != 0) {
-                dict.Remove(cell.Value);
-                continue;
-            }
-            foreach (int mark in cell.Marks) {
-                if (!dict.ContainsKey(mark)) continue;
-                if (dict[mark].Count == 3) dict.Remove(mark);
-                else dict[mark].Add((row, col));
-            }
-        }
+        var dict = GetMarkDict(type, group, 3);
         var kvps = dict.ToList();
         for (int i = 0; i < dict.Count; i++) {
             for (int j = i + 1; j < dict.Count; j++) {
@@ -298,23 +271,7 @@ public class SudokuSolver {
 
     private StepResult HQuad() => DoForEachGroup((type, group) => {
         //Mostly copied from HTriple; could probably factor much of it out
-        var dict = new Dictionary<int, HashSet<(int row, int col)>>();
-        for (int i = 1; i < 9; i++) {
-            dict[i] = new HashSet<(int, int)>();
-        }
-        for (int i = 0; i < 9; i++) {
-            (int row, int col) = GetPos(type, group, i);
-            SudokuState.Cell cell = State.Cells[row, col];
-            if (cell.Value != 0) {
-                dict.Remove(cell.Value);
-                continue;
-            }
-            foreach (int mark in cell.Marks) {
-                if (!dict.ContainsKey(mark)) continue;
-                if (dict[mark].Count == 4) dict.Remove(mark);
-                else dict[mark].Add((row, col));
-            }
-        }
+        var dict = GetMarkDict(type, group, 4);
         var kvps = dict.ToList();
         for (int i = 0; i < dict.Count; i++) {
             for (int j = i + 1; j < dict.Count; j++) {
@@ -352,46 +309,117 @@ public class SudokuSolver {
         return null;
     });
 
-
-    private StepResult LockedCandidates() => DoForEachGroup((type, group) => {
-        var dict = new Dictionary<int, HashSet<(int row, int col)>>();
-        for(int mark = 1; mark < 10; mark++) {
-            dict[mark] = new HashSet<(int, int)>();
-        }
-        for(int i = 0; i < 9; i++) {
-            (int row, int col) = GetPos(type, group, i);
-            var cell = State.Cells[row, col];
-            if(cell.Value == 0) {
-                foreach (int mark in cell.Marks) {
-                    if (!dict.ContainsKey(mark)) continue;
-                    dict[mark].Add((row, col));
+    private StepResult XWing() {
+        foreach(var type in new List<GroupType>() { GroupType.Row, GroupType.Column }) {
+            var allMarkPairs = new List<Dictionary<int,HashSet<(int row, int col)>>>();
+            for(int group = 0; group < 9; group++) {
+                var dict = GetMarkDict(type, group, 2);
+                foreach(var otherDict in allMarkPairs) {
+                    for(int mark = 1; mark < 10; mark++) {
+                        if(!(dict.ContainsKey(mark) && otherDict.ContainsKey(mark))) continue;
+                        List<(int row, int col)> removed;
+                        if(type == GroupType.Row) {
+                            if (dict[mark].First().col != otherDict[mark].First().col || dict[mark].Last().col != otherDict[mark].Last().col) continue;
+                            removed = RemoveMarks(GroupType.Column, dict[mark].First().col, mark,
+                                new HashSet<(int, int)>() { dict[mark].First(), otherDict[mark].First() });
+                            removed.AddRange(RemoveMarks(GroupType.Column, dict[mark].Last().col, mark,
+                                    new HashSet<(int, int)>() { dict[mark].Last(), otherDict[mark].Last() }));
+                        } else {
+                            if (dict[mark].First().row != otherDict[mark].First().row || dict[mark].Last().row != otherDict[mark].Last().row) continue;
+                            removed = RemoveMarks(GroupType.Row, dict[mark].First().row, mark,
+                                new HashSet<(int, int)>() { dict[mark].First(), otherDict[mark].First() });
+                            removed.AddRange(RemoveMarks(GroupType.Row, dict[mark].Last().row, mark,
+                                    new HashSet<(int, int)>() { dict[mark].Last(), otherDict[mark].Last() }));
+                        }
+                        if (removed.Count == 0) continue;
+                        var xWingCells = new List<(int row, int col)>() { dict[mark].First(), dict[mark].Last(), otherDict[mark].First(), otherDict[mark].Last() };
+                        var colors = new Dictionary<(int row, int col), Color>();
+                        foreach (var cell in xWingCells) {
+                            colors[cell] = Colors.Blue;
+                        }
+                        foreach (var cell in removed) {
+                            colors[cell] = Colors.Green;
+                        }
+                        return new StepResult($"X-Wing: Cells {ListCells(xWingCells)} prevent any other {mark}s in their " +
+                            $"{(type == GroupType.Row ? "Column" : "Row")}, affecting cells {ListCells(removed)}", colors);
+                    }
                 }
-            } else {
-                dict.Remove(cell.Value);
+                allMarkPairs.Add(dict);
             }
-        }
-        foreach(var kvp in dict) {
-            //check if all the candidates are in the same group (excepting the one it's currently iterating through)
-            var groups = GetGroups(kvp.Value.First().row, kvp.Value.First().col);
-            groups.Remove((type, group));
-            foreach(var pos in kvp.Value.Skip(1)) {
-                groups.IntersectWith(GetGroups(pos.row, pos.col));
-            }
-            if (groups.Count == 0) continue;
-            var removed = RemoveMarks(groups.First().type, groups.First().group, new HashSet<int>() { kvp.Key }, kvp.Value);
-            if (removed.Count == 0) continue;
-            var colors = new Dictionary<(int row, int col), Color>();
-            foreach(var cell in kvp.Value) {
-                colors[cell] = Colors.Blue;
-            }
-            foreach(var cell in removed) {
-                colors[cell] = Colors.Green;
-            }
-            return new StepResult($"Locked candidates: All candidates for {kvp.Key} in {type.ToString()} {group + 1} are in {groups.First().type.ToString()} {groups.First().group + 1}, " +
-                $"affecting cells {ListCells(removed)}", colors);
         }
         return null;
-    });
+    }
+
+    private StepResult Swordfish() {
+        foreach (var type in new List<GroupType>() { GroupType.Row, GroupType.Column }) {
+            var allMarkPairs = new List<Dictionary<int, HashSet<(int row, int col)>>>();
+            for (int group = 0; group < 9; group++) {
+                allMarkPairs.Add(GetMarkDict(type, group, 3));
+            }
+            for(int i = 0; i < allMarkPairs.Count; i++) {
+                for(int j = i + 1; j < allMarkPairs.Count; j++) {
+                    for(int k = j + 1; k < allMarkPairs.Count; k++) {
+                        for(int mark = 1; mark < 10; mark++) {
+                            if (!(allMarkPairs[i].ContainsKey(mark) && allMarkPairs[j].ContainsKey(mark) && allMarkPairs[k].ContainsKey(mark))) continue;
+                            var dictIGroups = new HashSet<int>();
+                            var exceptSet = new HashSet<(int row, int col)>();
+                            foreach (var pos in allMarkPairs[i][mark]) {
+                                dictIGroups.Add(type == GroupType.Row ? pos.col : pos.row);
+                                exceptSet.Add(pos);
+                            }
+                            var dictJGroups = new HashSet<int>();
+                            foreach (var pos in allMarkPairs[j][mark]) {
+                                dictJGroups.Add(type == GroupType.Row ? pos.col : pos.row);
+                                exceptSet.Add(pos);
+                            }
+                            var dictKGroups = new HashSet<int>();
+                            foreach (var pos in allMarkPairs[k][mark]) {
+                                dictKGroups.Add(type == GroupType.Row ? pos.col : pos.row);
+                                exceptSet.Add(pos);
+                            }
+                            dictIGroups.UnionWith(dictJGroups);
+                            dictIGroups.UnionWith(dictKGroups);
+                            if (dictIGroups.Count != 3) continue;
+                            var removed = RemoveMarks(type == GroupType.Row ? GroupType.Column : GroupType.Row, dictIGroups.First(), mark, exceptSet);
+                            removed.AddRange(RemoveMarks(type == GroupType.Row ? GroupType.Column : GroupType.Row, dictIGroups.Skip(1).First(), mark, exceptSet));
+                            removed.AddRange(RemoveMarks(type == GroupType.Row ? GroupType.Column : GroupType.Row, dictIGroups.Last(), mark, exceptSet));
+                            if (removed.Count == 0) continue;
+                            var colors = new Dictionary<(int row, int col), Color>();
+                            foreach(var pos in exceptSet) {
+                                colors[pos] = Colors.Blue;
+                            }
+                            foreach(var pos in removed) {
+                                colors[pos] = Colors.Green;
+                            }
+                            return new StepResult($"Swordfish: Cells {ListCells(exceptSet)} for candidate {mark}, affecting cells {ListCells(removed)}", colors);
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Dictionary<int, HashSet<(int row, int col)>> GetMarkDict(GroupType type, int group, int maxMarks) {
+        var dict = new Dictionary<int, HashSet<(int row, int col)>>();
+        for (int i = 1; i < 10; i++) {
+            dict[i] = new HashSet<(int, int)>();
+        }
+        for (int i = 0; i < 9; i++) {
+            (int row, int col) = GetPos(type, group, i);
+            SudokuState.Cell cell = State.Cells[row, col];
+            if (cell.Value != 0) {
+                dict.Remove(cell.Value);
+                continue;
+            }
+            foreach (int mark in cell.Marks) {
+                if (!dict.ContainsKey(mark)) continue;
+                if (dict[mark].Count == maxMarks) dict.Remove(mark);
+                else dict[mark].Add((row, col));
+            }
+        }
+        return dict;
+    }
 
     private StepResult DoForEachGroup(Func<GroupType,int,StepResult> function) {
         StepResult result = null;
@@ -424,6 +452,8 @@ public class SudokuSolver {
         return sb.ToString();
     }
 
+    private List<(int, int)> RemoveMarks(GroupType type, int group, int mark, HashSet<(int row, int col)> except) => RemoveMarks(type, group, new HashSet<int>() { mark }, except);
+    
     private List<(int,int)> RemoveMarks(GroupType type, int group, HashSet<int> marks, HashSet<(int row, int col)> except) {
         var removed = new List<(int, int)>();
         for(int i = 0; i < 9; i++) {
