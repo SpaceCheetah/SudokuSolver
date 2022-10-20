@@ -67,7 +67,7 @@ public partial class MainPage : ContentPage {
                 Start.Text = "Continue";
                 DisplayState();
             } catch(InvalidStateException e) {
-                if(e.Log is not null && e.Log.Length != 0) AddLogEntry(e.Log);
+                if(e.PreviousStep is not null && e.PreviousStep.Log.Length != 0) AddLogEntry(e.PreviousStep.Log);
                 AddLogEntry("Invalid state: " + e.Reason);
                 DisplayState();
                 State = null;
@@ -101,7 +101,7 @@ public partial class MainPage : ContentPage {
             }
             catch (InvalidStateException e) {
                 MainThread.BeginInvokeOnMainThread(() => {
-                    if (e.Log is not null && e.Log.Length != 0)  AddLogEntry(e.Log);
+                    if (e.PreviousStep is not null && e.PreviousStep.Log.Length != 0) AddLogEntry(e.PreviousStep.Log);
                     AddLogEntry("Invalid state: " + e.Reason);
                     DisplayState();
                     State = null;

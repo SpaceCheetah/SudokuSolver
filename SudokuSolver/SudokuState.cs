@@ -16,4 +16,14 @@ public class SudokuState {
         if (cells.GetLength(0) != 9 || cells.GetLength(1) != 9) throw new ArgumentException($"{nameof(cells)} must have size [9,9]");
         Cells = cells;
     }
+
+    public SudokuState Clone() {
+        var cellsCopy = new Cell[9, 9];
+        for(int r = 0; r < 9; r++) {
+            for(int c = 0; c < 9; c++) {
+                cellsCopy[r, c] = new Cell() { Value = Cells[r, c].Value, Marks = new HashSet<int>(Cells[r, c].Marks) };
+            }
+        }
+        return new SudokuState(cellsCopy);
+    }
 }

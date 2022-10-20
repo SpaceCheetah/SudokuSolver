@@ -1,12 +1,13 @@
-﻿using System.Collections.ObjectModel;
-using System.Text;
+﻿using System.Text;
 
 namespace SudokuSolver;
 
 public class SudokuSolver {
     private SudokuState State;
-    public SudokuSolver(SudokuState state) {
+    private bool IsRecursive;
+    public SudokuSolver(SudokuState state, bool isRecursive = false) {
         State = state;
+        IsRecursive = isRecursive;
     }
 
     public record StepResult(string Log, Dictionary<(int row, int col), Color> Cells);
@@ -21,15 +22,18 @@ public class SudokuSolver {
                     break;
                 }
             }
+            if(result is null && !IsRecursive) {
+                result = Guess();
+            }
             if (result is null) {
                 return null;
             }
             FillMarks();
             Verify();
             return result;
-        } catch(InvalidStateException e) {
-            if(result is not null) {
-                e.Log = result.Log;
+        } catch (InvalidStateException e) {
+            if (result is not null) {
+                e.PreviousStep = result;
             }
             throw;
         }
@@ -48,16 +52,18 @@ public class SudokuSolver {
         NQuad,
         HQuad,
         XWing,
-        Swordfish
+        Swordfish,
+        () => XYZWing(false),
+        () => XYZWing(true)
     };
 
     private StepResult SingleCandidate() {
-        for(int r = 0; r < 9; r++) {
-            for(int c = 0; c < 9; c++) {
+        for (int r = 0; r < 9; r++) {
+            for (int c = 0; c < 9; c++) {
                 SudokuState.Cell cell = State.Cells[r, c];
                 if (cell.Value == 0 && cell.Marks.Count == 1) {
                     cell.Value = cell.Marks.First();
-                    return new StepResult($"Single Candidate: Cell R{r + 1}C{c + 1} had only one possibility",
+                    return new StepResult($"Single Candidate: Cell R{r + 1}C{c + 1} could only be {cell.Marks.First()}",
                         new Dictionary<(int row, int col), Color>() {
                             [(r, c)] = Colors.Green
                         });
@@ -245,7 +251,7 @@ public class SudokuSolver {
         for (int i = 0; i < cells.Count; i++) {
             for (int j = i + 1; j < cells.Count; j++) {
                 for (int k = j + 1; k < cells.Count; k++) {
-                    for(int l = k + 1; l < cells.Count; l++) {
+                    for (int l = k + 1; l < cells.Count; l++) {
                         var set = new HashSet<int>(cells[i].marks);
                         set.UnionWith(cells[j].marks);
                         set.UnionWith(cells[k].marks);
@@ -276,7 +282,7 @@ public class SudokuSolver {
         for (int i = 0; i < dict.Count; i++) {
             for (int j = i + 1; j < dict.Count; j++) {
                 for (int k = j + 1; k < dict.Count; k++) {
-                    for(int l = k + 1; l < dict.Count; l++) {
+                    for (int l = k + 1; l < dict.Count; l++) {
                         var set = new HashSet<(int row, int col)>(kvps[i].Value);
                         set.UnionWith(kvps[j].Value);
                         set.UnionWith(kvps[k].Value);
@@ -310,15 +316,15 @@ public class SudokuSolver {
     });
 
     private StepResult XWing() {
-        foreach(var type in new List<GroupType>() { GroupType.Row, GroupType.Column }) {
-            var allMarkPairs = new List<Dictionary<int,HashSet<(int row, int col)>>>();
-            for(int group = 0; group < 9; group++) {
+        foreach (var type in new List<GroupType>() { GroupType.Row, GroupType.Column }) {
+            var allMarkPairs = new List<Dictionary<int, HashSet<(int row, int col)>>>();
+            for (int group = 0; group < 9; group++) {
                 var dict = GetMarkDict(type, group, 2);
-                foreach(var otherDict in allMarkPairs) {
-                    for(int mark = 1; mark < 10; mark++) {
-                        if(!(dict.ContainsKey(mark) && otherDict.ContainsKey(mark))) continue;
+                foreach (var otherDict in allMarkPairs) {
+                    for (int mark = 1; mark < 10; mark++) {
+                        if (!(dict.ContainsKey(mark) && otherDict.ContainsKey(mark))) continue;
                         List<(int row, int col)> removed;
-                        if(type == GroupType.Row) {
+                        if (type == GroupType.Row) {
                             if (dict[mark].First().col != otherDict[mark].First().col || dict[mark].Last().col != otherDict[mark].Last().col) continue;
                             removed = RemoveMarks(GroupType.Column, dict[mark].First().col, mark,
                                 new HashSet<(int, int)>() { dict[mark].First(), otherDict[mark].First() });
@@ -356,10 +362,10 @@ public class SudokuSolver {
             for (int group = 0; group < 9; group++) {
                 allMarkPairs.Add(GetMarkDict(type, group, 3));
             }
-            for(int i = 0; i < allMarkPairs.Count; i++) {
-                for(int j = i + 1; j < allMarkPairs.Count; j++) {
-                    for(int k = j + 1; k < allMarkPairs.Count; k++) {
-                        for(int mark = 1; mark < 10; mark++) {
+            for (int i = 0; i < allMarkPairs.Count; i++) {
+                for (int j = i + 1; j < allMarkPairs.Count; j++) {
+                    for (int k = j + 1; k < allMarkPairs.Count; k++) {
+                        for (int mark = 1; mark < 10; mark++) {
                             if (!(allMarkPairs[i].ContainsKey(mark) && allMarkPairs[j].ContainsKey(mark) && allMarkPairs[k].ContainsKey(mark))) continue;
                             var dictIGroups = new HashSet<int>();
                             var exceptSet = new HashSet<(int row, int col)>();
@@ -385,10 +391,10 @@ public class SudokuSolver {
                             removed.AddRange(RemoveMarks(type == GroupType.Row ? GroupType.Column : GroupType.Row, dictIGroups.Last(), mark, exceptSet));
                             if (removed.Count == 0) continue;
                             var colors = new Dictionary<(int row, int col), Color>();
-                            foreach(var pos in exceptSet) {
+                            foreach (var pos in exceptSet) {
                                 colors[pos] = Colors.Blue;
                             }
-                            foreach(var pos in removed) {
+                            foreach (var pos in removed) {
                                 colors[pos] = Colors.Green;
                             }
                             return new StepResult($"Swordfish: Cells {ListCells(exceptSet)} for candidate {mark}, affecting cells {ListCells(removed)}", colors);
@@ -398,6 +404,237 @@ public class SudokuSolver {
             }
         }
         return null;
+    }
+
+    private StepResult XYZWing(bool doZ) {
+        //This function is pretty bad; probably can be optimized, maybe with a dictionary? Still, not too big a deal.
+        for (int rowA = 0; rowA < 9; rowA++) {
+            for (int colA = 0; colA < 9; colA++) {
+                var cellA = State.Cells[rowA, colA];
+                if (cellA.Marks.Count != 2 || cellA.Value != 0) continue;
+                var groupsA = GetGroups(rowA, colA);
+                foreach ((GroupType typeA, int groupA) in groupsA) {
+                    for (int i = 0; i < 9; i++) {
+                        (int rowB, int colB) = GetPos(typeA, groupA, i);
+                        if ((rowB, colB) == (rowA, colA)) continue;
+                        var cellB = State.Cells[rowB, colB];
+                        if (cellB.Marks.Count != (doZ ? 3 : 2) || cellB.Value != 0) continue;
+                        var intersect = cellB.Marks.Intersect(cellA.Marks);
+                        if (intersect.Count() != (doZ ? 2 : 1)) continue;
+                        int x, y, z;
+                        if (doZ) {
+                            x = cellA.Marks.First();
+                            y = cellB.Marks.Except(intersect).First();
+                            z = cellA.Marks.Last();
+                        }
+                        else {
+                            x = intersect.First();
+                            y = cellB.Marks.Except(intersect).First();
+                            z = cellA.Marks.Except(intersect).First();
+                        }
+                        var groupsB = GetGroups(rowB, colB);
+                        groupsB.ExceptWith(groupsA);
+                        foreach ((GroupType typeB, int groupB) in groupsB) {
+                            for (int j = 0; j < 9; j++) {
+                                (int rowC, int colC) = GetPos(typeB, groupB, j);
+                                if ((rowC, colC) == (rowB, colB)) continue;
+                                var cellC = State.Cells[rowC, colC];
+                                if (cellC.Marks.Count != 2 || cellC.Value != 0) continue;
+                                if (!(cellC.Marks.Contains(y) && cellC.Marks.Contains(z))) continue;
+                                var groupsC = GetGroups(rowC, colC);
+                                if (groupsC.Intersect(groupsA).Count() != 0) continue;
+                                //If it got to this point, it is an XY-Wing, but very likely to not remove any marks
+                                //Affected cells will be in both one of groupsA and one of groupsC
+                                //If doZ, then it must be in one of groupsB as well
+                                var affected = new List<(int row, int col)>();
+                                foreach ((GroupType type, int group) in groupsA) {
+                                    for (int k = 0; k < 9; k++) {
+                                        (int row, int col) = GetPos(type, group, k);
+                                        if ((row, col) == (rowB, colB)) continue;
+                                        var groups = GetGroups(row, col);
+                                        if (groups.Intersect(groupsC).Count() == 0) continue;
+                                        if (doZ && groups.Intersect(groupsB).Count() == 0) continue;
+                                        var cell = State.Cells[row, col];
+                                        if (!(cell.Marks.Contains(z) && cell.Value == 0)) continue;
+                                        cell.Marks.Remove(z);
+                                        affected.Add((row, col));
+                                    }
+                                }
+                                if (affected.Count == 0) continue;
+                                var xyWingCells = new List<(int row, int col)>() {
+                                    (rowA, colA), (rowB, colB), (rowC, colC)
+                                };
+                                var colors = new Dictionary<(int row, int col), Color>();
+                                foreach (var pos in xyWingCells) {
+                                    colors[pos] = Colors.Blue;
+                                }
+                                foreach (var pos in affected) {
+                                    colors[pos] = Colors.Green;
+                                }
+                                string name = doZ ? "XYZ-Wing" : "XY-Wing";
+                                return new StepResult($"{name}: Cells {ListCells(xyWingCells)} form {name} ({x}, {y}) for {z}, affecting {ListCells(affected)}", colors);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private StepResult Guess() {
+        (StepResult result, SudokuState state) bestResult = (null, null);
+        //Find the shortest (probably easiest to understand for a human) result
+        void setResult((StepResult result, SudokuState state) arg) {
+            if(bestResult.result is null || arg.result.Log.Length < bestResult.result.Log.Length) {
+                bestResult = arg;
+            }
+        };
+        foreach((var path1, var path2) in GetPathPairs()) {
+            (List<string> logs, HashSet<(int row, int col)> involvedCells, bool fail, SudokuState state) path1Results = RunPath(path1.row, path1.col, path1.mark);
+            if (path1Results.fail) {
+                setResult(FailPathResult(path1.row, path1.col, path1.mark, path1Results.logs, path1Results.involvedCells));
+                continue;
+            }
+            (List<string> logs, HashSet<(int row, int col)> involvedCells, bool fail, SudokuState state) path2Results = RunPath(path2.row, path2.col, path2.mark);
+            if(path2Results.fail) {
+                setResult(FailPathResult(path2.row, path2.col, path2.mark, path2Results.logs, path2Results.involvedCells));
+                continue;
+            }
+
+            //only cells affected in both paths will be affected at this level
+            var involvedCells = path1Results.involvedCells.Intersect(path2Results.involvedCells);
+            var changedCells = new HashSet<(int row, int col)>();
+            var state = State.Clone();
+            foreach((int row, int col) in involvedCells) {
+                var cell1 = path1Results.state.Cells[row, col];
+                var cell2 = path2Results.state.Cells[row, col];
+                var cellOriginal = state.Cells[row, col];
+                if(cellOriginal.Value != 0) {
+                    throw new Exception("This shouldn't happen");
+                }
+                var cellMarks = (cell1.Value == 0) ?  new HashSet<int>(cell1.Marks) : new HashSet<int>() { cell1.Value };
+                cellMarks.UnionWith((cell2.Value == 0) ? cell2.Marks : new HashSet<int>() { cell2.Value });
+                if(cellOriginal.Marks.Count < cellMarks.Count) {
+                    cellOriginal.Marks = cellMarks;
+                    changedCells.Add((row, col));
+                }
+            }
+            if (changedCells.Count == 0) continue;
+
+            var sb = new StringBuilder();
+            if(path1.row == path2.row && path1.col == path2.col) {
+                sb.AppendLine($"R{path1.row + 1}C{path1.col + 1} must be one of [{path1.mark}, {path2.mark}");
+            } else {
+                sb.AppendLine($"Either R{path1.row + 1}C{path1.col + 1} or R{path2.row + 1}C{path2.col + 1} must be {path1.mark}");
+            }
+            sb.AppendLine($"If R{path1.row + 1}C{path1.col + 1} is {path1.mark}:");
+            foreach (string log in path1Results.logs) {
+                sb.AppendLine("\t" + log);
+            }
+            sb.AppendLine($"If R{path2.row + 1}C{path2.col + 1} is {path2.mark}:");
+            foreach (string log in path2Results.logs) {
+                sb.AppendLine("\t" + log);
+            }
+            sb.Append($"Both paths changed cells {ListCells(changedCells)}");
+            var colors = new Dictionary<(int row, int col), Color>();
+            foreach(var pos in path1Results.involvedCells) {
+                colors[pos] = Colors.OrangeRed;
+            }
+            foreach (var pos in path2Results.involvedCells) {
+                colors[pos] = Colors.Blue;
+            }
+            foreach (var pos in involvedCells) {
+                colors[pos] = Colors.Purple;
+            }
+            foreach (var pos in changedCells) {
+                colors[pos] = Colors.Green;
+            }
+            setResult((new StepResult(sb.ToString(), colors), state));
+        }
+        if (bestResult.result is null) return null;
+        State.Cells = bestResult.state.Cells;
+        return bestResult.result;
+    }
+
+    private (StepResult, SudokuState) FailPathResult(int row, int col, int mark, List<string> logs, HashSet<(int row, int col)> involvedCells) {
+        var state = State.Clone();
+        state.Cells[row, col].Marks.Remove(mark);
+        var sb = new StringBuilder();
+        sb.AppendLine($"If R{row + 1}C{col + 1} is {mark}:");
+        foreach(string log in logs) {
+            sb.AppendLine("\t" + log);
+        }
+        sb.Append($"R{row + 1}C{col + 1} cannot be {mark}");
+        var colors = new Dictionary<(int row, int col), Color>();
+        foreach((int, int) pos in involvedCells) {
+            colors[pos] = Colors.Blue;
+        }
+        colors[(row, col)] = Colors.Green;
+        return (new StepResult(sb.ToString(), colors), state);
+    }
+
+    private (List<string> logs, HashSet<(int row, int col)> involvedCells, bool fail, SudokuState endState) RunPath(int row, int col, int mark) {
+        var stateCopy = State.Clone();
+        stateCopy.Cells[row, col].Value = mark;
+        var logs = new List<string>();
+        var involvedCells = new HashSet<(int row, int col)>();
+        involvedCells.Add((row, col));
+        var solver = new SudokuSolver(stateCopy, true);
+        while(true) {
+            try {
+                var result = solver.Step();
+                if (result is null) break;
+                logs.Add(result.Log);
+                foreach((var pos, var color) in result.Cells) {
+                    involvedCells.Add(pos);
+                }
+            } catch(InvalidStateException e) {
+                if(e.PreviousStep is not null) {
+                    logs.Add(e.PreviousStep.Log);
+                    foreach ((var pos, var color) in e.PreviousStep.Cells) {
+                        involvedCells.Add(pos);
+                    }
+                }
+                logs.Add("Invalid state: " + e.Reason);
+                foreach(var pos in e.InvolvedCells) {
+                    involvedCells.Add(pos);
+                }
+                return (logs, involvedCells, true, null);
+            }
+        }
+        return (logs, involvedCells, false, solver.State);
+    }
+
+    private List<((int row, int col, int mark) path1, (int row, int col, int mark) path2)> GetPathPairs() {
+        //every path should only be in one pair, since any other pairs it is in would happen anyway
+        var pathPairs = new List<((int row, int col, int mark) path1, (int row, int col, int mark) path2)>();
+        var paths = new HashSet<(int row, int col, int mark)>();
+        for(int r = 0; r < 9; r++) {
+            for(int c = 0; c < 9; c++) {
+                var cell = State.Cells[r, c];
+                if (cell.Marks.Count != 2 || cell.Value != 0) continue;
+                (int, int, int) path1 = (r, c, cell.Marks.First());
+                (int, int, int) path2 = (r, c, cell.Marks.Last());
+                //don't need to check paths, as it will have a different position then any previous
+                paths.Add(path1);
+                paths.Add(path2);
+                pathPairs.Add((path1, path2));
+            }
+        }
+        DoForEachGroup((type, group) => {
+            var markDict = GetMarkDict(type, group, 2);
+            for(int mark = 1; mark < 10; mark++) {
+                if (!markDict.ContainsKey(mark)) continue;
+                var set = markDict[mark];
+                (int, int, int) path1 = (set.First().row, set.First().col, mark);
+                (int, int, int) path2 = (set.Last().row, set.Last().col, mark);
+                if (paths.Contains(path1) || paths.Contains(path2)) continue;
+                pathPairs.Add((path1, path2));
+            }
+            return null;
+        });
+        return pathPairs;
     }
 
     private Dictionary<int, HashSet<(int row, int col)>> GetMarkDict(GroupType type, int group, int maxMarks) {
