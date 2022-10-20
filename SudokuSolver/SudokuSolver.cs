@@ -486,7 +486,7 @@ public class SudokuSolver {
         (StepResult result, SudokuState state) bestResult = (null, null);
         //Find the shortest (probably easiest to understand for a human) result
         void setResult((StepResult result, SudokuState state) arg) {
-            if(bestResult.result is null || arg.result.Log.Length < bestResult.result.Log.Length) {
+            if(bestResult.result is null || arg.result.Cells.Count < bestResult.result.Cells.Count) {
                 bestResult = arg;
             }
         };

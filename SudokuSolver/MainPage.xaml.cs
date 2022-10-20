@@ -9,21 +9,42 @@ using System.ComponentModel;
 
 public partial class MainPage : ContentPage {
     private (SudokuCell cell, (int row, int col) pos) Selected;
-    private SudokuCell[,] Cells = new SudokuCell[9,9];
+    private SudokuCell[,] Cells = new SudokuCell[9, 9];
     private SudokuState State;
     private static readonly Color BColor = Application.Current.RequestedTheme == AppTheme.Light ? Colors.White : Colors.Black;
     private static readonly Color FColor = Application.Current.RequestedTheme == AppTheme.Light ? Colors.Black : Colors.White;
     private static readonly Color SColor = Application.Current.RequestedTheme == AppTheme.Light ? Colors.LightSkyBlue : Colors.DarkBlue;
     private Thread ProcessingThread;
+    private int SelectedLog = -1;
 
     public static readonly BindableProperty ProcessingProperty = BindableProperty.Create(nameof(Processing), typeof(bool), typeof(MainPage), false);
     public bool Processing { get => (bool)GetValue(ProcessingProperty); private set => SetValue(ProcessingProperty, value); }
 
-    public record LogEntry(string Entry); //Have to have a class to bind to
+    public class LogEntry : INotifyPropertyChanged {
+        public string Entry { get; set; }
+        public SudokuState State;
+        public Dictionary<(int row, int col), Color> Colors;
+        public bool Valid;
+        public int Id;
+        private Color _color;
+        public Color Color { get => _color; set {
+                _color = value;
+                OnColorChanged();
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        public void OnColorChanged() {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Color)));
+        }
+    }
+
+    //public record LogEntry(string Entry, SudokuState State, Dictionary<(int row, int col), Color> Colors, bool Valid, int Id);
 
     public ObservableCollection<LogEntry> Log { get; } = new ObservableCollection<LogEntry>();
 
-    public void AddLogEntry(string entry) => Log.Insert(0, new LogEntry(entry));
+    public void AddLogEntry(string entry, SudokuState state, Dictionary<(int row, int col), Color> colors, bool valid) =>
+        Log.Insert(0, new LogEntry() { Entry = entry, State = state.Clone(), Colors = colors, Valid = valid, Id = Log.Count, Color = BColor});
 
     public MainPage() {
         InitializeComponent();
@@ -36,7 +57,7 @@ public partial class MainPage : ContentPage {
         }
     }
 
-    public void DisplayState() {
+    public void DisplayState(Dictionary<(int row, int col), Color> colors) {
         for(int r = 0; r < 9; r++) {
             for(int c = 0; c < 9; c++) {
                 Cells[r, c].Value = State.Cells[r, c].Value;
@@ -45,10 +66,22 @@ public partial class MainPage : ContentPage {
                 }
             }
         }
+        foreach((var pos, var color) in colors) {
+            Cells[pos.row, pos.col].BackgroundColor = color;
+        }
     }
 
     public void OnStartClicked(object sender, EventArgs _) {
         if (Processing) return;
+        if (SelectedLog != -1) {
+            for (int i = Log.Count - 1; i > SelectedLog; i--) {
+                Log.RemoveAt(0);
+            }
+            SelectedLog = -1;
+        }
+        if (LogCollection.SelectedItem is LogEntry entry) {
+            entry.Color = BColor;
+        }
         Selected.cell = null;
         ClearColors();
         SudokuSolver solver;
@@ -65,15 +98,16 @@ public partial class MainPage : ContentPage {
                 solver.FillMarks();
                 solver.Verify();
                 Start.Text = "Continue";
-                DisplayState();
+                DisplayState(new Dictionary<(int row, int col), Color>());
             } catch(InvalidStateException e) {
-                if(e.PreviousStep is not null && e.PreviousStep.Log.Length != 0) AddLogEntry(e.PreviousStep.Log);
-                AddLogEntry("Invalid state: " + e.Reason);
-                DisplayState();
-                State = null;
+                var colors = new Dictionary<(int row, int col), Color>();
                 foreach (var cell in e.InvolvedCells) {
-                    Cells[cell.row, cell.col].BackgroundColor = Colors.Red;
+                    colors[cell] = Colors.Red;
                 }
+                if (e.PreviousStep is not null && e.PreviousStep.Log.Length != 0) AddLogEntry(e.PreviousStep.Log, State, colors, false);
+                AddLogEntry("Invalid state: " + e.Reason, State, colors, false);
+                DisplayState(colors);
+                State = null;
             }
             return;
         }
@@ -84,30 +118,27 @@ public partial class MainPage : ContentPage {
                 SudokuSolver.StepResult result = solver.Step();
                 MainThread.BeginInvokeOnMainThread(() => {
                     if (result is null) {
-                        AddLogEntry("Failed to make any progress");
+                        AddLogEntry("Failed to make any progress", State, new Dictionary<(int row, int col), Color>(), true);
                         Processing = false;
                         ProcessingThread.Join();
                         return;
                     }
-                    DisplayState();
-                    AddLogEntry(result.Log);
-                    foreach (var kvp in result.Cells) {
-                        //might need to change the colors later to account for dark mode
-                        Cells[kvp.Key.row, kvp.Key.col].BackgroundColor = kvp.Value;
-                    }
+                    DisplayState(result.Cells);
+                    AddLogEntry(result.Log, State, result.Cells, true);
                     Processing = false;
                     ProcessingThread.Join();
                 });
             }
             catch (InvalidStateException e) {
                 MainThread.BeginInvokeOnMainThread(() => {
-                    if (e.PreviousStep is not null && e.PreviousStep.Log.Length != 0) AddLogEntry(e.PreviousStep.Log);
-                    AddLogEntry("Invalid state: " + e.Reason);
-                    DisplayState();
-                    State = null;
+                    var colors = new Dictionary<(int row, int col), Color>();
                     foreach (var cell in e.InvolvedCells) {
-                        Cells[cell.row, cell.col].BackgroundColor = Colors.Red;
+                        colors[cell] = Colors.Red;
                     }
+                    if (e.PreviousStep is not null && e.PreviousStep.Log.Length != 0) AddLogEntry(e.PreviousStep.Log, State, colors, false);
+                    AddLogEntry("Invalid state: " + e.Reason, State, colors, false);
+                    DisplayState(colors);
+                    State = null;
                     Start.Text = "Start";
                     Processing = false;
                     ProcessingThread.Join();
@@ -115,6 +146,28 @@ public partial class MainPage : ContentPage {
             }
         });
         ProcessingThread.Start();
+    }
+
+    private void LogCollectionChanged(object sender, SelectionChangedEventArgs e) {
+        Selected.cell = null;
+        var entry = e.CurrentSelection[0] as LogEntry;
+        if (e.PreviousSelection.Count != 0 && e.PreviousSelection[0] is LogEntry previous) {
+            previous.Color = BColor;
+        }
+        entry.Color = SColor;
+        State = entry.State.Clone();
+        ClearColors();
+        DisplayState(entry.Colors);
+        if(entry.Valid) {
+            Start.Text = "Continue";
+        } else {
+            State = null;
+            Start.Text = "Start";
+        }
+        SelectedLog = entry.Id;
+        if(entry.Id == Log.Count - 1) {
+            SelectedLog = -1;
+        }
     }
 
     public void NumberPressed(int num) {
@@ -125,6 +178,15 @@ public partial class MainPage : ContentPage {
                 cell.ResetMarks();
             }
             Start.Text = "Start";
+            if (SelectedLog != -1) {
+                for(int i = Log.Count - 1; i > SelectedLog; i--) {
+                    Log.RemoveAt(0);
+                }
+                SelectedLog = -1;
+            }
+            if (LogCollection.SelectedItem is LogEntry entry) {
+                entry.Color = BColor;
+            }
         }
     }
 
@@ -170,9 +232,14 @@ public partial class MainPage : ContentPage {
         if (Processing) {
             return;
         }
-        Selected.cell = null;
-        ClearColors();
+        bool cleared = false;
+        if (Selected.cell is not null) {
+            Selected.cell = null;
+            ClearColors();
+            cleared = true;
+        }
         if (sender is SudokuCell s) {
+            if (!cleared) ClearColors();
             Selected.cell = s;
             Selected.cell.BackgroundColor = SColor;
             for(int r = 0; r < 9; r++) {
